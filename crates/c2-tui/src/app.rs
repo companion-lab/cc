@@ -118,6 +118,7 @@ pub enum AppEvent {
 pub struct Message {
     pub role: Role,
     pub content: String,
+    pub thinking: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -151,6 +152,7 @@ impl AppState {
             messages: vec![Message {
                 role: Role::System,
                 content: "Type / to list commands".to_string(),
+                thinking: None,
             }],
             input: String::new(),
             sessions: vec!["New Chat".to_string()],
@@ -648,6 +650,7 @@ impl AppState {
         self.messages.push(Message {
             role: Role::User,
             content: prompt.clone(),
+            thinking: None,
         });
 
         // Clear input and switch to waiting mode
@@ -663,6 +666,7 @@ impl AppState {
         self.messages.push(Message {
             role: Role::System,
             content,
+            thinking: None,
         });
     }
 
@@ -670,6 +674,7 @@ impl AppState {
         self.messages.push(Message {
             role: Role::System,
             content: format!("Error: {}", error),
+            thinking: None,
         });
         self.mode = AppMode::Input;
         self.status = "Error".to_string();
@@ -720,6 +725,27 @@ impl AppState {
         self.messages.push(Message {
             role: Role::Assistant,
             content: delta.to_string(),
+            thinking: None,
+        });
+    }
+
+    pub fn append_thinking_to_last_assistant_message(&mut self, delta: &str) {
+        // Check if the last message is from Assistant
+        if let Some(last) = self.messages.last_mut() {
+            if last.role == Role::Assistant {
+                match &mut last.thinking {
+                    Some(thinking) => thinking.push_str(delta),
+                    None => last.thinking = Some(delta.to_string()),
+                }
+                return;
+            }
+        }
+
+        // Otherwise, create a new assistant message with thinking
+        self.messages.push(Message {
+            role: Role::Assistant,
+            content: String::new(),
+            thinking: Some(delta.to_string()),
         });
     }
 }

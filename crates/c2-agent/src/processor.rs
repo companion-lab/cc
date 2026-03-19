@@ -91,6 +91,13 @@ impl Processor {
                             delta,
                         });
                     }
+                    StreamEvent::ReasoningDelta(delta) => {
+                        self.bus.emit(Event::ReasoningDelta {
+                            session_id: session_id.clone(),
+                            message_id: c2_storage::MessageId::new(),
+                            delta,
+                        });
+                    }
                     StreamEvent::ToolCallStart { id, name } => {
                         pending_tools.insert(id.clone(), PendingToolCall {
                             id: id.clone(),

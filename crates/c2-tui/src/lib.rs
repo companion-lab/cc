@@ -360,6 +360,9 @@ async fn run_event_loop(
                 Ok(c2_core::Event::TextDelta { delta, .. }) => {
                     app.append_to_last_assistant_message(&delta);
                 }
+                Ok(c2_core::Event::ReasoningDelta { delta, .. }) => {
+                    app.append_thinking_to_last_assistant_message(&delta);
+                }
                 Ok(c2_core::Event::AgentDone { .. }) => {
                     app.handle_app_event(AppEvent::ResponseDone);
                 }
