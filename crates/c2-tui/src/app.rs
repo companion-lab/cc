@@ -119,13 +119,7 @@ impl AppState {
         Self {
             messages: vec![Message {
                 role: Role::System,
-                content: "Welcome to c2 - your AI coding assistant.\n\n\
-                    Shortcuts:\n\
-                    • Enter: Send message\n\
-                    • Ctrl+M: Switch model\n\
-                    • Tab: Switch agent\n\
-                    • Ctrl+T: Manage MCP servers\n\
-                    • Esc/Ctrl+C: Exit".to_string(),
+                content: "Press Ctrl+Shift+H to list all commands".to_string(),
             }],
             input: String::new(),
             sessions: vec!["New Chat".to_string()],

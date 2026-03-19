@@ -8,6 +8,8 @@ pub mod glob;
 pub mod grep;
 pub mod ls;
 pub mod web_fetch;
+pub mod web_search;
+pub mod subagent;
 pub mod todo;
 
 pub use registry::ToolRegistry;

@@ -17,9 +17,13 @@ impl ToolRegistry {
         self.register(Arc::new(crate::bash::BashTool));
         self.register(Arc::new(crate::read::ReadTool));
         self.register(Arc::new(crate::write::WriteTool));
+        self.register(Arc::new(crate::edit::EditTool));
         self.register(Arc::new(crate::glob::GlobTool));
         self.register(Arc::new(crate::grep::GrepTool));
         self.register(Arc::new(crate::ls::LsTool));
+        self.register(Arc::new(crate::web_fetch::WebFetchTool));
+        self.register(Arc::new(crate::web_search::WebSearchTool));
+        self.register(Arc::new(crate::subagent::SubagentTool));
         self.register(Arc::new(crate::todo::TodoWriteTool));
         self.register(Arc::new(crate::todo::TodoReadTool));
     }
