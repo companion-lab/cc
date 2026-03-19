@@ -1,0 +1,18 @@
+[package]
+name = "cc-snapshot"
+description = "Git-based file snapshots for session revert"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cc-core        = { workspace = true }
+cc-config      = { workspace = true }
+tokio          = { workspace = true }
+serde          = { workspace = true }
+anyhow         = { workspace = true }
+thiserror      = { workspace = true }
+tracing        = { workspace = true }
+dirs           = { workspace = true }
+tempfile       = { workspace = true }
+chrono         = { workspace = true }

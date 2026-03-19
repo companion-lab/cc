@@ -1,0 +1,22 @@
+[package]
+name = "cc-provider"
+description = "LLM provider adapters with streaming"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cc-config      = { workspace = true }
+tokio          = { workspace = true }
+tokio-stream   = { workspace = true }
+reqwest        = { workspace = true, features = ["rustls-tls"] }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+anyhow         = { workspace = true }
+thiserror      = { workspace = true }
+tracing        = { workspace = true }
+async-trait    = { workspace = true }
+futures        = { workspace = true }
+bytes          = { workspace = true }
+eventsource-stream = { workspace = true }
+async-stream   = { workspace = true }

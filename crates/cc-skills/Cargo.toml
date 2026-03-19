@@ -1,0 +1,20 @@
+[package]
+name = "cc-skills"
+description = "Companion-specific skills: Vexa, Hivemind, Desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cc-core        = { workspace = true }
+cc-config      = { workspace = true }
+cc-mcp         = { workspace = true }
+tokio          = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+anyhow         = { workspace = true }
+thiserror      = { workspace = true }
+tracing        = { workspace = true }
+async-trait    = { workspace = true }
+reqwest        = { workspace = true, features = ["rustls-tls"] }
+futures        = { workspace = true }

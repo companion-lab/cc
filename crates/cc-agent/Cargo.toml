@@ -1,0 +1,24 @@
+[package]
+name = "cc-agent"
+description = "Agent orchestration and session processor loop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cc-core        = { workspace = true }
+cc-config      = { workspace = true }
+cc-storage     = { workspace = true }
+cc-provider    = { workspace = true }
+cc-tools       = { workspace = true }
+cc-mcp         = { workspace = true }
+cc-permissions = { workspace = true }
+cc-snapshot    = { workspace = true }
+tokio          = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+anyhow         = { workspace = true }
+thiserror      = { workspace = true }
+tracing        = { workspace = true }
+async-trait    = { workspace = true }
+futures        = { workspace = true }

@@ -1,0 +1,22 @@
+[package]
+name = "cc-tui"
+description = "Terminal UI (ratatui)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cc-core        = { workspace = true }
+cc-config      = { workspace = true }
+cc-server      = { workspace = true }
+ratatui        = { workspace = true }
+crossterm      = { workspace = true }
+tokio          = { workspace = true }
+tokio-stream   = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+anyhow         = { workspace = true }
+tracing        = { workspace = true }
+futures        = { workspace = true }
+reqwest        = { workspace = true, features = ["rustls-tls"] }
+eventsource-stream = { workspace = true }

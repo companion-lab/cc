@@ -1,0 +1,108 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cc-cli",
+    "crates/cc-core",
+    "crates/cc-agent",
+    "crates/cc-tools",
+    "crates/cc-lsp",
+    "crates/cc-mcp",
+    "crates/cc-provider",
+    "crates/cc-server",
+    "crates/cc-tui",
+    "crates/cc-storage",
+    "crates/cc-config",
+    "crates/cc-pty",
+    "crates/cc-snapshot",
+    "crates/cc-permissions",
+    "crates/cc-skills",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["companion-lab"]
+repository = "https://github.com/companion-lab/cc"
+
+[workspace.dependencies]
+# async runtime
+tokio        = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# http
+axum           = { version = "0.8", features = ["ws", "macros"] }
+tower          = { version = "0.5" }
+tower-http     = { version = "0.6", features = ["cors", "trace", "fs"] }
+reqwest        = { version = "0.12", features = ["json", "stream"], default-features = false }
+hyper          = { version = "1" }
+eventsource-stream = { version = "0.2" }
+
+# serialization
+serde        = { version = "1", features = ["derive"] }
+serde_json   = { version = "1" }
+toml         = { version = "0.8" }
+
+# cli
+clap         = { version = "4", features = ["derive", "env"] }
+
+# storage
+sqlx         = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "uuid", "json"] }
+
+# error handling
+anyhow       = "1"
+thiserror    = "2"
+
+# logging / tracing
+tracing              = "0.1"
+tracing-subscriber   = { version = "0.3", features = ["env-filter", "json"] }
+
+# tui
+ratatui      = "0.29"
+crossterm    = { version = "0.28", features = ["event-stream"] }
+
+# ids
+ulid         = "1"
+uuid         = { version = "1", features = ["v4", "serde"] }
+
+# utils
+futures      = "0.3"
+async-trait  = "0.1"
+async-stream = "0.3"
+bytes        = "1"
+chrono       = { version = "0.4", features = ["serde"] }
+dirs         = "5"
+globset      = "0.4"
+notify       = { version = "7", features = ["serde"] }
+regex        = "1"
+semver       = { version = "1", features = ["serde"] }
+walkdir      = "2"
+which        = "7"
+tempfile     = "3"
+rand         = "0.8"
+
+# workspace crates
+cc-core        = { path = "crates/cc-core" }
+cc-config      = { path = "crates/cc-config" }
+cc-storage     = { path = "crates/cc-storage" }
+cc-provider    = { path = "crates/cc-provider" }
+cc-agent       = { path = "crates/cc-agent" }
+cc-tools       = { path = "crates/cc-tools" }
+cc-lsp         = { path = "crates/cc-lsp" }
+cc-mcp         = { path = "crates/cc-mcp" }
+cc-server      = { path = "crates/cc-server" }
+cc-tui         = { path = "crates/cc-tui" }
+cc-pty         = { path = "crates/cc-pty" }
+cc-snapshot    = { path = "crates/cc-snapshot" }
+cc-permissions = { path = "crates/cc-permissions" }
+cc-skills      = { path = "crates/cc-skills" }
+
+[profile.release]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+strip         = true
+
+[profile.dev]
+opt-level = 0
+debug     = true

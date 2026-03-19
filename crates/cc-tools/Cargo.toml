@@ -1,0 +1,29 @@
+[package]
+name = "cc-tools"
+description = "Built-in agent tools: bash, read, write, edit, glob, grep, etc."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cc-core        = { workspace = true }
+cc-config      = { workspace = true }
+cc-storage     = { workspace = true }
+cc-provider    = { workspace = true }
+cc-permissions = { workspace = true }
+cc-lsp         = { workspace = true }
+tokio          = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+anyhow         = { workspace = true }
+thiserror      = { workspace = true }
+tracing        = { workspace = true }
+async-trait    = { workspace = true }
+futures        = { workspace = true }
+bytes          = { workspace = true }
+globset        = { workspace = true }
+walkdir        = { workspace = true }
+regex          = { workspace = true }
+reqwest        = { workspace = true, features = ["rustls-tls"] }
+tempfile       = { workspace = true }
+which          = { workspace = true }

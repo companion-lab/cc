@@ -1,0 +1,9 @@
+/target
+*.lock~
+.env
+.env.*
+!.env.example
+*.log
+dist/
+.cc.*
+.cc
