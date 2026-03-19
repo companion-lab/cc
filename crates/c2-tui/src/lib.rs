@@ -187,11 +187,17 @@ async fn run_without_provider(
         renderer.present()?;
 
         if event::poll(std::time::Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Esc => return Ok(()),
-                    _ => app.handle_key_event(key),
+            match event::read()? {
+                Event::Resize(new_width, new_height) => {
+                    *renderer = Renderer::new(new_width as u32, new_height as u32)?;
                 }
+                Event::Key(key) => {
+                    match key.code {
+                        KeyCode::Esc => return Ok(()),
+                        _ => app.handle_key_event(key),
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -308,32 +314,39 @@ async fn run_event_loop(
             }
         }
 
-        // Handle keyboard input
+        // Handle keyboard input and resize
         if event::poll(std::time::Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                // Handle dialog close on Esc
-                if key.code == KeyCode::Esc && app.dialog_mode != DialogMode::None {
+            match event::read()? {
+                Event::Resize(new_width, new_height) => {
+                    // Recreate renderer with new dimensions
+                    *renderer = Renderer::new(new_width as u32, new_height as u32)?;
+                }
+                Event::Key(key) => {
+                    // Handle dialog close on Esc
+                    if key.code == KeyCode::Esc && app.dialog_mode != DialogMode::None {
+                        app.handle_key_event(key);
+                        continue;
+                    }
+
+                    // Handle exit when no dialog
+                    if key.code == KeyCode::Esc && app.dialog_mode == DialogMode::None {
+                        return Ok(());
+                    }
+
+                    // Handle Ctrl+C exit
+                    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                        return Ok(());
+                    }
+
+                    // Handle Enter for sending message
+                    if key.code == KeyCode::Enter && app.mode == AppMode::Input && app.dialog_mode == DialogMode::None {
+                        app.send_message();
+                        continue;
+                    }
+
                     app.handle_key_event(key);
-                    continue;
                 }
-
-                // Handle exit when no dialog
-                if key.code == KeyCode::Esc && app.dialog_mode == DialogMode::None {
-                    return Ok(());
-                }
-
-                // Handle Ctrl+C exit
-                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    return Ok(());
-                }
-
-                // Handle Enter for sending message
-                if key.code == KeyCode::Enter && app.mode == AppMode::Input && app.dialog_mode == DialogMode::None {
-                    app.send_message();
-                    continue;
-                }
-
-                app.handle_key_event(key);
+                _ => {}
             }
         }
     }
