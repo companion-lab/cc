@@ -17,6 +17,7 @@ pub mod models_fetcher;
 
 use app::{AppState, AppEvent, AppMode, DialogMode, ModelInfo, AgentInfo, McpServerInfo, McpStatus};
 use theme::Theme;
+use models_fetcher::ModelsFetcher;
 use ui::{
     sidebar::draw_sidebar,
     header::draw_header,
@@ -70,17 +71,56 @@ pub async fn run() -> anyhow::Result<()> {
         is_free: false,
     };
 
-    // Build available models list from provider registry
+    // Fetch all available models from models.dev
     let mut available_models = Vec::new();
-    if let Some(reg) = &registry {
-        let model = reg.model();
-        available_models.push(ModelInfo {
-            provider_id: model.provider_id().to_string(),
-            model_id: model.id().to_string(),
-            name: model.id().to_string(),
-            description: format!("Context: {}k tokens", model.context_length() / 1000),
-            is_free: false,
-        });
+    let mut models_fetcher = ModelsFetcher::new();
+    match models_fetcher.load_or_fetch() {
+        Ok(data) => {
+            eprintln!("Loaded {} providers from models.dev", data.providers.len());
+
+            // Convert all models to ModelInfo
+            for (provider_id, provider) in &data.providers {
+                for (model_id, model) in &provider.models {
+                    let is_free = model.cost.input == 0.0 && model.cost.output == 0.0;
+                    let description = if model.limit.context > 0 {
+                        format!("{}k ctx{}", model.limit.context / 1000, if is_free { " • FREE" } else { "" })
+                    } else if is_free {
+                        "FREE".to_string()
+                    } else {
+                        String::new()
+                    };
+
+                    available_models.push(ModelInfo {
+                        provider_id: provider_id.clone(),
+                        model_id: model_id.clone(),
+                        name: model.name.clone(),
+                        description,
+                        is_free,
+                    });
+                }
+            }
+
+            // Sort: free models first, then by provider name, then model name
+            available_models.sort_by(|a, b| {
+                a.is_free.cmp(&b.is_free).reverse()  // Free models first
+                    .then_with(|| a.provider_id.cmp(&b.provider_id))
+                    .then_with(|| a.name.cmp(&b.name))
+            });
+        }
+        Err(e) => {
+            eprintln!("Warning: Could not fetch models from models.dev: {}", e);
+            // Fall back to just the current model from provider registry
+            if let Some(reg) = &registry {
+                let model = reg.model();
+                available_models.push(ModelInfo {
+                    provider_id: model.provider_id().to_string(),
+                    model_id: model.id().to_string(),
+                    name: model.id().to_string(),
+                    description: format!("Context: {}k tokens", model.context_length() / 1000),
+                    is_free: false,
+                });
+            }
+        }
     }
 
     // Build agents from config
