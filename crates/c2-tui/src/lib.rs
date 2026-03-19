@@ -1,25 +1,23 @@
-use std::io::{self, stdout, Write};
+use std::io::{self, stdout};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
+    event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use opentui_rust::{
-    renderer::Renderer, 
-    buffer::OptimizedBuffer, 
-    color::Rgba, 
+    renderer::Renderer,
+    buffer::OptimizedBuffer,
+    color::Rgba,
     style::Style,
-    text::TextBuffer,
+    cell::Cell,
 };
-use tokio::sync::mpsc;
 
 pub mod app;
 
-use app::{App, AppEvent, AppMode, Message, Role};
+use app::{App, AppEvent, AppMode, Role};
 
 pub async fn run() -> anyhow::Result<()> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -28,10 +26,10 @@ pub async fn run() -> anyhow::Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
     
-    // Create renderer
+    // Create renderer with proper dimensions
     let (width, height) = crossterm::terminal::size()?;
     let mut renderer = Renderer::new(width as u32, height as u32)?;
-    
+
     let mut app = App::new(cwd.clone());
 
     // Load configuration
@@ -48,16 +46,14 @@ pub async fn run() -> anyhow::Result<()> {
         Ok(r) => r,
         Err(e) => {
             app.add_system_message(format!("Error: {}. Please set your API key in ~/.c2/config.json", e));
-            // Run without provider
-            let (_, dummy_rx) = tokio::sync::broadcast::channel(1);
-            let mut dummy_rx = dummy_rx;
-            let result = run_event_loop(&mut renderer, &mut app, None, None, None, &mut dummy_rx).await;
+            let _ = run_without_provider(&mut renderer, &mut app).await;
             cleanup_terminal()?;
-            return result;
+            return Ok(());
         }
     };
 
     let model = registry.model();
+
     let data_dir = c2_config::Paths::user_data_dir();
     let db = Arc::new(c2_storage::Db::open(&data_dir).await?);
     let bus = Arc::new(c2_core::bus::Bus::new());
@@ -74,13 +70,39 @@ pub async fn run() -> anyhow::Result<()> {
     ).await;
 
     cleanup_terminal()?;
-    result
+    
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            eprintln!("TUI Error: {}", e);
+            Ok(())
+        }
+    }
 }
 
 fn cleanup_terminal() -> io::Result<()> {
     disable_raw_mode()?;
     stdout().execute(LeaveAlternateScreen)?;
     Ok(())
+}
+
+async fn run_without_provider(
+    renderer: &mut Renderer,
+    app: &mut App,
+) -> io::Result<()> {
+    loop {
+        draw_ui(renderer, app)?;
+        renderer.present()?;
+
+        if event::poll(std::time::Duration::from_millis(50))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Esc => return Ok(()),
+                    _ => app.handle_key_event(key),
+                }
+            }
+        }
+    }
 }
 
 async fn run_event_loop(
@@ -92,11 +114,10 @@ async fn run_event_loop(
     bus_rx: &mut tokio::sync::broadcast::Receiver<c2_core::Event>,
 ) -> anyhow::Result<()> {
     loop {
-        // Draw the UI
         draw_ui(renderer, app)?;
         renderer.present()?;
 
-        // Handle app events (user input, responses)
+        // Handle app events
         while let Ok(app_event) = app.rx.try_recv() {
             match app_event {
                 AppEvent::UserInput(prompt) => {
@@ -108,7 +129,6 @@ async fn run_event_loop(
                             title,
                         );
                         
-                        // Save session
                         match session.save(db).await {
                             Ok(_) => {
                                 app.current_session_id = Some(session.id.to_string());
@@ -129,7 +149,7 @@ async fn run_event_loop(
                         let session_clone = session.clone();
 
                         tokio::spawn(async move {
-                            let (abort_tx, abort_rx) = tokio::sync::watch::channel(false);
+                            let (_abort_tx, abort_rx) = tokio::sync::watch::channel(false);
                             let processor = c2_agent::processor::Processor::new(
                                 model_clone,
                                 db_clone,
@@ -165,7 +185,7 @@ async fn run_event_loop(
             }
         }
 
-        // Handle bus events (streaming responses from agent)
+        // Handle bus events (streaming responses)
         loop {
             match bus_rx.try_recv() {
                 Ok(c2_core::Event::TextDelta { delta, .. }) => {
@@ -184,7 +204,7 @@ async fn run_event_loop(
         }
 
         // Handle keyboard input
-        if event::poll(Duration::from_millis(50))? {
+        if event::poll(std::time::Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Esc => return Ok(()),
@@ -205,70 +225,110 @@ fn draw_ui(renderer: &mut Renderer, app: &App) -> io::Result<()> {
     let width = buffer.width();
     let height = buffer.height();
     
-    // Clear background
-    buffer.clear(Rgba::from_hex("#0c0c0c").unwrap());
+    // Dark theme with accents
+    let bg_dark = Rgba::from_hex("#0a0a0a").unwrap();
+    let bg_panel = Rgba::from_hex("#0f0f0f").unwrap();
+    let bg_input = Rgba::from_hex("#121212").unwrap();
+    let accent_blue = Rgba::from_hex("#2d7bd9").unwrap();
+    let accent_green = Rgba::from_hex("#2db84d").unwrap();
+    let accent_yellow = Rgba::from_hex("#e6b450").unwrap();
+    let text_primary = Rgba::from_hex("#e6e6e6").unwrap();
+    let text_secondary = Rgba::from_hex("#8e8e93").unwrap();
+    let border_subtle = Rgba::from_hex("#2a2a2a").unwrap();
     
-    // Draw sidebar
-    draw_sidebar(buffer, app, height);
+    buffer.clear(bg_dark);
     
-    // Draw main content area
-    let main_x = 20u32;
-    let main_width = width - main_x;
-    draw_messages(buffer, app, main_x, 0, main_width, height - 3);
-    draw_input(buffer, app, main_x, height - 3, main_width, 3);
-    draw_status_bar(buffer, app, main_x, height - 1, main_width, 1);
+    // Sidebar
+    let sidebar_width = 22u32;
+    draw_panel(buffer, 0, 0, sidebar_width, height, bg_panel, border_subtle);
     
-    Ok(())
-}
-
-fn draw_sidebar(buffer: &mut OptimizedBuffer, app: &App, height: u32) {
-    let sidebar_width = 20u32;
-    let bg_color = Rgba::from_hex("#1e1e1e").unwrap();
-    let selected_bg = Rgba::from_hex("#264f78").unwrap();
-    let text_color = Rgba::from_hex("#cccccc").unwrap();
-    let selected_text = Rgba::WHITE;
+    // Sidebar header
+    let header = " Sessions ";
+    buffer.draw_text(2, 1, header, Style::builder().fg(accent_blue).bg(bg_panel).bold().build());
+    buffer.set(sidebar_width - 1, 0, Cell::new('┐', Style::builder().bg(bg_panel).fg(border_subtle).build()));
+    buffer.set(sidebar_width - 1, height - 1, Cell::new('┘', Style::builder().bg(bg_panel).fg(border_subtle).build()));
     
-    // Background
-    for y in 0..height {
-        for x in 0..sidebar_width {
-            buffer.set(x as u32, y as u32, opentui_rust::cell::Cell::new(' ', Style::bg(bg_color)));
-        }
-    }
-    
-    // Title
-    let title = " Sessions ";
-    for (i, ch) in title.chars().enumerate() {
-        if (i as u32) < sidebar_width - 1 {
-            buffer.set((1 + i) as u32 as u32, 0 as u32, opentui_rust::cell::Cell::new(ch, 
-                Style::builder().fg(Rgba::from_hex("#569cd6").unwrap()).bg(bg_color).bold().build()));
-        }
-    }
-    
-    // Sessions list
+    // Sidebar items
     for (idx, session) in app.sessions.iter().enumerate() {
-        let y = (2 + idx) as u32;
+        let y = 3 + idx as u32;
         if y >= height - 1 {
             break;
         }
         
         let is_selected = idx == app.selected_session;
-        let style = if is_selected {
-            Style::builder().fg(selected_text).bg(selected_bg).bold().build()
-        } else {
-            Style::builder().fg(text_color).bg(bg_color).build()
-        };
+        let text_color = if is_selected { Rgba::WHITE } else { text_secondary };
+        let bg_color = if is_selected { Rgba::from_hex("#2d2d30").unwrap() } else { bg_panel };
         
-        // Draw session name
-        let display_text = if session.len() > sidebar_width as usize - 3 {
-            format!("> {}", &session[..(sidebar_width as usize) - 5])
-        } else {
-            format!("  {}", session)
-        };
+        let label = if is_selected { "▶ " } else { "  " };
+        let truncated = if session.len() > 17 { format!("{}…", &session[..16]) } else { session.clone() };
         
-        for (i, ch) in display_text.chars().enumerate() {
-            if i < sidebar_width as usize {
-                buffer.set(1 + i as u32, y as u32, opentui_rust::cell::Cell::new(ch, style));
-            }
+        buffer.draw_text(1, y, &format!("{}{}", label, truncated),
+            Style::builder().fg(text_color).bg(bg_color).build());
+    }
+    
+    // Main content area
+    let main_x = sidebar_width + 1;
+    let main_width = width.saturating_sub(main_x).saturating_sub(1);
+    draw_panel(buffer, main_x, 0, main_width, height.saturating_sub(4), bg_panel, border_subtle);
+    
+    // Messages
+    draw_messages(buffer, app, main_x, 2, main_width, height.saturating_sub(6));
+    
+    // Input area
+    let input_y = height - 4;
+    draw_panel(buffer, main_x, input_y, main_width, 3, bg_input, border_subtle);
+    
+    // Status bar
+    let status_y = height - 1;
+    for x in main_x..main_x + main_width {
+        buffer.set(x, status_y, Cell::new(' ', Style::builder().bg(accent_blue).build()));
+    }
+    
+    let status_icon = match app.mode {
+        AppMode::Input => "●",
+        AppMode::Waiting => "◌",
+    };
+    let status_color = match app.mode {
+        AppMode::Input => Rgba::WHITE,
+        AppMode::Waiting => Rgba::from_hex("#e6b450").unwrap(),
+    };
+    
+    let status_text = format!(" {} {} | Sessions: {} | Messages: {}", 
+        status_icon, app.status, app.sessions.len(), app.messages.len());
+    
+    buffer.draw_text(main_x + 1, status_y, &status_text,
+        Style::builder().fg(status_color).bg(accent_blue).build());
+    
+    Ok(())
+}
+
+fn draw_panel(
+    buffer: &mut OptimizedBuffer,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    bg: Rgba,
+    border: Rgba,
+) {
+    buffer.set(x, y, Cell::new('┌', Style::builder().fg(border).bg(bg).build()));
+    for col in x + 1..x + width - 1 {
+        buffer.set(col, y, Cell::new('─', Style::builder().fg(border).bg(bg).build()));
+    }
+    buffer.set(x + width - 1, y, Cell::new('┐', Style::builder().fg(border).bg(bg).build()));
+    
+    buffer.set(x, y + height - 1, Cell::new('└', Style::builder().fg(border).bg(bg).build()));
+    for col in x + 1..x + width - 1 {
+        buffer.set(col, y + height - 1, Cell::new('─', Style::builder().fg(border).bg(bg).build()));
+    }
+    buffer.set(x + width - 1, y + height - 1, Cell::new('┘', Style::builder().fg(border).bg(bg).build()));
+    
+    for row in y + 1..y + height - 1 {
+        buffer.set(x, row, Cell::new('│', Style::builder().fg(border).bg(bg).build()));
+        buffer.set(x + width - 1, row, Cell::new('│', Style::builder().fg(border).bg(bg).build()));
+        
+        for col in x + 1..x + width - 1 {
+            buffer.set(col, row, Cell::new(' ', Style::builder().bg(bg).build()));
         }
     }
 }
@@ -281,203 +341,75 @@ fn draw_messages(
     width: u32,
     height: u32,
 ) {
-    let bg_color = Rgba::from_hex("#0c0c0c").unwrap();
+    let bg_panel = Rgba::from_hex("#0f0f0f").unwrap();
+    let accent_green = Rgba::from_hex("#2db84d").unwrap();
+    let accent_blue = Rgba::from_hex("#2d7bd9").unwrap();
+    let accent_yellow = Rgba::from_hex("#e6b450").unwrap();
+    let text_primary = Rgba::from_hex("#e6e6e6").unwrap();
     
-    // Clear message area
-    for row in y..y + height {
-        for col in x..x + width {
-            if col < buffer.width() {
-                buffer.set(col as u32, row as u32, opentui_rust::cell::Cell::new(' ', Style::bg(bg_color)));
-            }
-        }
-    }
-    
-    let mut current_y = y + 1;
-    
+    let mut msg_y = y;
     for message in &app.messages {
-        if current_y >= y + height - 1 {
+        if msg_y >= y + height {
             break;
         }
         
         let (prefix, color) = match message.role {
-            Role::User => ("You", Rgba::from_hex("#4ec9b0").unwrap()),
-            Role::Assistant => ("c2", Rgba::from_hex("#569cd6").unwrap()),
-            Role::System => ("System", Rgba::from_hex("#dcdcaa").unwrap()),
+            Role::User => ("You", accent_green),
+            Role::Assistant => ("c2", accent_blue),
+            Role::System => ("● System", accent_yellow),
         };
         
-        // Draw prefix
         let prefix_text = format!("{}: ", prefix);
-        for (i, ch) in prefix_text.chars().enumerate() {
-            buffer.set(x + i as u32, current_y as u32, opentui_rust::cell::Cell::new(ch, 
-                Style::builder().fg(color).bg(bg_color).bold().build()));
-        }
+        buffer.draw_text(x + 1, msg_y, &prefix_text,
+            Style::builder().fg(color).bg(bg_panel).bold().build());
         
-        // Draw message text (wrap if needed)
-        let prefix_len = prefix_text.len();
-        let content_width = width.saturating_sub(prefix_len as u32 + 2);
-        let mut content_x = x + prefix_len as u32;
-        
+        let mut lines_drawn = 0u32;
         for line in message.content.lines() {
-            if current_y >= y + height - 1 {
+            if msg_y + lines_drawn >= y + height {
                 break;
             }
             
-            if line.is_empty() {
-                current_y += 1;
-                continue;
-            }
+            let content_start = x + 1 + prefix_text.len() as u32;
+            let max_width = width.saturating_sub(content_start - x + 2) as usize;
             
-            // Simple word wrapping
             let words: Vec<&str> = line.split_whitespace().collect();
             let mut current_line = String::new();
+            let mut current_x = content_start;
             
-            for word in words {
-                if current_line.is_empty() {
-                    current_line = word.to_string();
-                } else if current_line.len() + word.len() + 1 <= content_width as usize {
-                    current_line.push(' ');
+            for &word in &words {
+                let word_len = word.chars().count();
+                let can_add = current_line.is_empty() || 
+                    (current_line.len() + word_len + 1) <= (width - (current_x - x)) as usize;
+                
+                if can_add {
+                    if !current_line.is_empty() {
+                        current_line.push(' ');
+                    }
                     current_line.push_str(word);
                 } else {
-                    // Draw current line
-                    for (i, ch) in current_line.chars().enumerate() {
-                        if content_x + (i as u32) < x + width {
-                            buffer.set(content_x + i as u32, current_y as u32, opentui_rust::cell::Cell::new(ch, 
-                                Style::builder().fg(color).bg(bg_color).build()));
-                        }
-                    }
-                    current_y += 1;
+                    buffer.draw_text(current_x, msg_y + lines_drawn, &current_line,
+                        Style::builder().fg(text_primary).bg(bg_panel).build());
+                    lines_drawn += 1;
                     current_line = word.to_string();
-                }
-                
-                if current_y >= y + height - 1 {
-                    break;
-                }
-            }
-            
-            // Draw remaining line
-            if !current_line.is_empty() && current_y < y + height - 1 {
-                for (i, ch) in current_line.chars().enumerate() {
-                    if content_x + (i as u32) < x + width {
-                        buffer.set(content_x + i as u32, current_y as u32, opentui_rust::cell::Cell::new(ch, 
-                            Style::builder().fg(color).bg(bg_color).build()));
+                    current_x = content_start;
+                    
+                    if msg_y + lines_drawn >= y + height {
+                        break;
                     }
                 }
-                current_y += 1;
             }
             
-            current_y += 1; // Extra space between messages
+            if !current_line.is_empty() && msg_y + lines_drawn < y + height {
+                buffer.draw_text(current_x, msg_y + lines_drawn, &current_line,
+                    Style::builder().fg(text_primary).bg(bg_panel).build());
+                lines_drawn += 1;
+            }
+            
+            if msg_y + lines_drawn >= y + height {
+                break;
+            }
         }
-    }
-}
-
-fn draw_input(
-    buffer: &mut OptimizedBuffer,
-    app: &App,
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
-) {
-    let bg_color = if app.mode == AppMode::Input {
-        Rgba::from_hex("#0c0c0c").unwrap()
-    } else {
-        Rgba::from_hex("#1e1e1e").unwrap()
-    };
-    let border_color = if app.mode == AppMode::Input {
-        Rgba::from_hex("#569cd6").unwrap()
-    } else {
-        Rgba::from_hex("#888888").unwrap()
-    };
-    let text_color = if app.mode == AppMode::Input {
-        Rgba::WHITE
-    } else {
-        Rgba::from_hex("#888888").unwrap()
-    };
-    
-    // Draw border
-    for col in x..x + width {
-        buffer.set(col as u32, y as u32, opentui_rust::cell::Cell::new('─', 
-            Style::builder().fg(border_color).bg(bg_color).build()));
-        if height > 1 {
-            buffer.set(col as u32, y + height - 1 as u32, opentui_rust::cell::Cell::new('─', 
-                Style::builder().fg(border_color).bg(bg_color).build()));
-        }
-    }
-    for row in y..y + height {
-        buffer.set(x as u32, row as u32, opentui_rust::cell::Cell::new('│', 
-            Style::builder().fg(border_color).bg(bg_color).build()));
-        buffer.set(x + width - 1 as u32, row as u32, opentui_rust::cell::Cell::new('│', 
-            Style::builder().fg(border_color).bg(bg_color).build()));
-    }
-    
-    // Corners
-    buffer.set(x as u32, y as u32, opentui_rust::cell::Cell::new('┌', 
-        Style::builder().fg(border_color).bg(bg_color).build()));
-    buffer.set(x + width - 1 as u32, y as u32, opentui_rust::cell::Cell::new('┐', 
-        Style::builder().fg(border_color).bg(bg_color).build()));
-    if height > 1 {
-        buffer.set(x as u32, y + height - 1 as u32, opentui_rust::cell::Cell::new('└', 
-            Style::builder().fg(border_color).bg(bg_color).build()));
-        buffer.set(x + width - 1 as u32, y + height - 1 as u32, opentui_rust::cell::Cell::new('┘', 
-            Style::builder().fg(border_color).bg(bg_color).build()));
-    }
-    
-    // Draw input text
-    let max_input_width = width.saturating_sub(4);
-    let input_text = if app.input.len() > max_input_width {
-        format!("…{}", &app.input[app.input.len() - max_input_width + 1..])
-    } else {
-        app.input.clone()
-    };
-    
-    for (i, ch) in input_text.chars().enumerate() {
-        buffer.set(x + 2 + i as u32, y + 1 as u32, opentui_rust::cell::Cell::new(ch, 
-            Style::builder().fg(text_color).bg(bg_color).build()));
-    }
-    
-    // Draw title
-    let title = match app.mode {
-        AppMode::Input => " Input (Enter to send, Esc to exit) ",
-        AppMode::Waiting => " Waiting for response... (Ctrl+C to cancel) ",
-    };
-    
-    for (i, ch) in title.chars().enumerate() {
-        let col = x + 2 + i;
-        if col < x + width - 2 {
-            buffer.set(col as u32, y as u32, opentui_rust::cell::Cell::new(ch, 
-                Style::builder().fg(border_color).bg(bg_color).build()));
-        }
-    }
-}
-
-fn draw_status_bar(
-    buffer: &mut OptimizedBuffer,
-    app: &App,
-    x: u32,
-    y: u32,
-    width: u32,
-    _height: u32,
-) {
-    let bg_color = Rgba::from_hex("#007acc").unwrap();
-    let text_color = Rgba::WHITE;
-    
-    // Background
-    for col in x..x + width {
-        buffer.set(col as u32, y as u32, opentui_rust::cell::Cell::new(' ', 
-            Style::bg(bg_color)));
-    }
-    
-    // Status text
-    let status_icon = match app.mode {
-        AppMode::Input => "●",
-        AppMode::Waiting => "◌",
-    };
-    let status_text = format!("{} {} | Messages: {}", status_icon, app.status, app.messages.len());
-    
-    for (i, ch) in status_text.chars().enumerate() {
-        if x + i < x + width {
-            buffer.set(x + i as u32, y as u32, opentui_rust::cell::Cell::new(ch, 
-                Style::builder().fg(text_color).bg(bg_color).build()));
-        }
+        
+        msg_y += lines_drawn + 1;
     }
 }
