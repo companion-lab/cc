@@ -161,6 +161,20 @@ fn parse_sse(
                     for choice in v["choices"].as_array().unwrap_or(&vec![]) {
                         let delta = &choice["delta"];
 
+                        // Thinking/Reasoning (for models like Mimo, DeepSeek R1, etc.)
+                        if let Some(thinking) = delta["reasoning_content"].as_str() {
+                            if !thinking.is_empty() {
+                                yield Ok(StreamEvent::ReasoningDelta(thinking.to_string()));
+                            }
+                        }
+
+                        // Also check for "thinking" field (some models use this)
+                        if let Some(thinking) = delta["thinking"].as_str() {
+                            if !thinking.is_empty() {
+                                yield Ok(StreamEvent::ReasoningDelta(thinking.to_string()));
+                            }
+                        }
+
                         // Text
                         if let Some(text) = delta["content"].as_str() {
                             if !text.is_empty() {
