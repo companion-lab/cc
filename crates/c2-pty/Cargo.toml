@@ -1,0 +1,16 @@
+[package]
+name = "c2-pty"
+description = "Cross-platform PTY manager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+c2-core        = { workspace = true }
+tokio          = { workspace = true }
+bytes          = { workspace = true }
+anyhow         = { workspace = true }
+thiserror      = { workspace = true }
+tracing        = { workspace = true }
+portable-pty   = "0.8"
+futures        = { workspace = true }

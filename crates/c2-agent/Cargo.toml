@@ -1,0 +1,24 @@
+[package]
+name = "c2-agent"
+description = "Agent orchestration and session processor loop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+c2-core        = { workspace = true }
+c2-config      = { workspace = true }
+c2-storage     = { workspace = true }
+c2-provider    = { workspace = true }
+c2-tools       = { workspace = true }
+c2-mcp         = { workspace = true }
+c2-permissions = { workspace = true }
+c2-snapshot    = { workspace = true }
+tokio          = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+anyhow         = { workspace = true }
+thiserror      = { workspace = true }
+tracing        = { workspace = true }
+async-trait    = { workspace = true }
+futures        = { workspace = true }

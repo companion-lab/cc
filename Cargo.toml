@@ -1,21 +1,21 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/cc-cli",
-    "crates/cc-core",
-    "crates/cc-agent",
-    "crates/cc-tools",
-    "crates/cc-lsp",
-    "crates/cc-mcp",
-    "crates/cc-provider",
-    "crates/cc-server",
-    "crates/cc-tui",
-    "crates/cc-storage",
-    "crates/cc-config",
-    "crates/cc-pty",
-    "crates/cc-snapshot",
-    "crates/cc-permissions",
-    "crates/cc-skills",
+    "crates/c2-cli",
+    "crates/c2-core",
+    "crates/c2-agent",
+    "crates/c2-tools",
+    "crates/c2-lsp",
+    "crates/c2-mcp",
+    "crates/c2-provider",
+    "crates/c2-server",
+    "crates/c2-tui",
+    "crates/c2-storage",
+    "crates/c2-config",
+    "crates/c2-pty",
+    "crates/c2-snapshot",
+    "crates/c2-permissions",
+    "crates/c2-skills",
 ]
 
 [workspace.package]
@@ -23,7 +23,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 authors = ["companion-lab"]
-repository = "https://github.com/companion-lab/cc"
+repository = "https://github.com/companion-lab/c2"
 
 [workspace.dependencies]
 # async runtime
@@ -82,20 +82,20 @@ tempfile     = "3"
 rand         = "0.8"
 
 # workspace crates
-cc-core        = { path = "crates/cc-core" }
-cc-config      = { path = "crates/cc-config" }
-cc-storage     = { path = "crates/cc-storage" }
-cc-provider    = { path = "crates/cc-provider" }
-cc-agent       = { path = "crates/cc-agent" }
-cc-tools       = { path = "crates/cc-tools" }
-cc-lsp         = { path = "crates/cc-lsp" }
-cc-mcp         = { path = "crates/cc-mcp" }
-cc-server      = { path = "crates/cc-server" }
-cc-tui         = { path = "crates/cc-tui" }
-cc-pty         = { path = "crates/cc-pty" }
-cc-snapshot    = { path = "crates/cc-snapshot" }
-cc-permissions = { path = "crates/cc-permissions" }
-cc-skills      = { path = "crates/cc-skills" }
+c2-core        = { path = "crates/c2-core" }
+c2-config      = { path = "crates/c2-config" }
+c2-storage     = { path = "crates/c2-storage" }
+c2-provider    = { path = "crates/c2-provider" }
+c2-agent       = { path = "crates/c2-agent" }
+c2-tools       = { path = "crates/c2-tools" }
+c2-lsp         = { path = "crates/c2-lsp" }
+c2-mcp         = { path = "crates/c2-mcp" }
+c2-server      = { path = "crates/c2-server" }
+c2-tui         = { path = "crates/c2-tui" }
+c2-pty         = { path = "crates/c2-pty" }
+c2-snapshot    = { path = "crates/c2-snapshot" }
+c2-permissions = { path = "crates/c2-permissions" }
+c2-skills      = { path = "crates/c2-skills" }
 
 [profile.release]
 opt-level     = 3

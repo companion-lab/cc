@@ -5,5 +5,5 @@
 !.env.example
 *.log
 dist/
-.cc.*
-.cc
+.c2.*
+.c2
