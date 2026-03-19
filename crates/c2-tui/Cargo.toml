@@ -8,15 +8,11 @@ license.workspace = true
 [dependencies]
 c2-core        = { workspace = true }
 c2-config      = { workspace = true }
-c2-server      = { workspace = true }
+c2-storage     = { workspace = true }
+c2-provider    = { workspace = true }
+c2-agent       = { workspace = true }
 ratatui        = { workspace = true }
 crossterm      = { workspace = true }
 tokio          = { workspace = true }
-tokio-stream   = { workspace = true }
-serde          = { workspace = true }
-serde_json     = { workspace = true }
+textwrap       = "0.16"
 anyhow         = { workspace = true }
-tracing        = { workspace = true }
-futures        = { workspace = true }
-reqwest        = { workspace = true, features = ["rustls-tls"] }
-eventsource-stream = { workspace = true }
