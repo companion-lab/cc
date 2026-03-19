@@ -72,6 +72,7 @@ pub struct AppState {
     pub tx: UnboundedSender<AppEvent>,
     pub rx: UnboundedReceiver<AppEvent>,
     pub cwd: PathBuf,
+    pub show_thinking: bool,
 
     // Command palette
     pub commands: Vec<Command>,
@@ -141,6 +142,7 @@ impl AppState {
             Command { name: "model".to_string(), description: "Switch model".to_string(), shortcut: "Ctrl+M".to_string(), category: "Agent".to_string() },
             Command { name: "agent".to_string(), description: "Switch agent/mode".to_string(), shortcut: "Tab".to_string(), category: "Agent".to_string() },
             Command { name: "research".to_string(), description: "Enter research mode".to_string(), shortcut: "".to_string(), category: "Agent".to_string() },
+            Command { name: "thinking".to_string(), description: "Toggle thinking display".to_string(), shortcut: "".to_string(), category: "Display".to_string() },
             Command { name: "mcp".to_string(), description: "Manage installed MCP servers".to_string(), shortcut: "Ctrl+T".to_string(), category: "MCP".to_string() },
             Command { name: "marketplace".to_string(), description: "Browse MCP marketplace".to_string(), shortcut: "".to_string(), category: "MCP".to_string() },
             Command { name: "clear".to_string(), description: "Clear conversation".to_string(), shortcut: "".to_string(), category: "Session".to_string() },
@@ -164,6 +166,7 @@ impl AppState {
             tx,
             rx,
             cwd,
+            show_thinking: true,
             commands,
             command_dialog_selection: 0,
             current_model: model,
@@ -392,6 +395,14 @@ impl AppState {
                     self.add_system_message("Research mode not configured. Run with a research agent.".to_string());
                 }
             }
+            "thinking" => {
+                self.show_thinking = !self.show_thinking;
+                if self.show_thinking {
+                    self.add_system_message("Thinking display enabled".to_string());
+                } else {
+                    self.add_system_message("Thinking display disabled".to_string());
+                }
+            }
             "mcp" => self.open_dialog(DialogMode::McpManager),
             "marketplace" => self.open_dialog(DialogMode::McpMarketplace),
             "clear" => {
@@ -404,6 +415,7 @@ impl AppState {
                     /model - Switch model (Ctrl+M)\n\
                     /agent - Switch agent/mode (Tab)\n\
                     /research - Enter research mode\n\
+                    /thinking - Toggle thinking display\n\
                     /mcp - Manage installed MCP servers (Ctrl+T)\n\
                     /marketplace - Browse MCP marketplace\n\
                     /clear - Clear conversation\n\

@@ -1,5 +1,6 @@
 use opentui_rust::{
     buffer::OptimizedBuffer,
+    cell::Cell,
     style::Style,
 };
 
@@ -15,6 +16,7 @@ pub fn draw_messages(
     height: u32,
     messages: &[Message],
     scroll_offset: usize,
+    show_thinking: bool,
     theme: &Theme,
 ) {
     // Draw panel background
@@ -31,11 +33,17 @@ pub fn draw_messages(
     for message in messages {
         let mut line_count = 0;
         
-        // Count thinking lines
-        if let Some(thinking) = &message.thinking {
-            line_count += 1; // "Thinking:" header
-            line_count += calculate_message_lines(thinking, content_width.saturating_sub(2));
-            line_count += 1; // separator
+        // Count thinking lines (only if show_thinking is enabled)
+        if show_thinking {
+            if let Some(thinking) = &message.thinking {
+                // Filter out redacted content
+                let filtered = thinking.replace("[REDACTED]", "").trim().to_string();
+                if !filtered.is_empty() {
+                    line_count += 1; // "Thinking:" header
+                    line_count += calculate_message_lines(&filtered, content_width.saturating_sub(3));
+                    line_count += 1; // separator
+                }
+            }
         }
         
         // Count content lines
@@ -76,60 +84,71 @@ pub fn draw_messages(
 
         msg_y += 1;
 
-        // Render thinking content first (for assistant messages)
-        if let Some(thinking) = &message.thinking {
-            if msg_y < y + height - 1 {
-                // Draw thinking header
-                buffer.draw_text(content_x, msg_y, "  💭 Thinking:",
-                    Style::builder().fg(theme.text_muted).bg(theme.bg_panel).italic().build());
-                msg_y += 1;
-            }
+        // Render thinking content first (opencode style - left border, muted)
+        if show_thinking {
+            if let Some(thinking) = &message.thinking {
+                // Filter out redacted content
+                let filtered = thinking.replace("[REDACTED]", "").trim().to_string();
+                
+                if !filtered.is_empty() && msg_y < y + height - 1 {
+                    // Draw left border for thinking block
+                    for line_y in msg_y..std::cmp::min(msg_y + 50, y + height - 1) {
+                        buffer.set(content_x, line_y, Cell::new('│',
+                            Style::builder().fg(theme.border).bg(theme.bg_panel).build()));
+                    }
 
-            // Render thinking content with indentation and muted style
-            for line in thinking.lines() {
-                if msg_y >= y + height - 1 {
-                    break;
-                }
+                    // Draw "Thinking:" label in muted italic
+                    buffer.draw_text(content_x + 2, msg_y, "Thinking:",
+                        Style::builder().fg(theme.text_muted).bg(theme.bg_panel).italic().build());
+                    msg_y += 1;
 
-                let words: Vec<&str> = line.split_whitespace().collect();
-                let mut current_line = String::new();
-                let current_x = content_x + 2;
-
-                for &word in &words {
-                    let word_len = word.chars().count();
-                    let max_len = content_width.saturating_sub(2) as usize;
-                    let can_add = current_line.is_empty() ||
-                        (current_line.len() + word_len + 1) <= max_len;
-
-                    if can_add {
-                        if !current_line.is_empty() {
-                            current_line.push(' ');
+                    // Render thinking content with left border, muted style
+                    for line in filtered.lines() {
+                        if msg_y >= y + height - 1 {
+                            break;
                         }
-                        current_line.push_str(word);
-                    } else {
+
+                        let words: Vec<&str> = line.split_whitespace().collect();
+                        let mut current_line = String::new();
+                        let current_x = content_x + 3; // Indented past border
+
+                        for &word in &words {
+                            let word_len = word.chars().count();
+                            let max_len = content_width.saturating_sub(3) as usize;
+                            let can_add = current_line.is_empty() ||
+                                (current_line.len() + word_len + 1) <= max_len;
+
+                            if can_add {
+                                if !current_line.is_empty() {
+                                    current_line.push(' ');
+                                }
+                                current_line.push_str(word);
+                            } else {
+                                if !current_line.is_empty() && msg_y < y + height - 1 {
+                                    buffer.draw_text(current_x, msg_y, &current_line,
+                                        Style::builder().fg(theme.text_muted).bg(theme.bg_panel).build());
+                                    msg_y += 1;
+                                }
+                                current_line = word.to_string();
+
+                                if msg_y >= y + height - 1 {
+                                    break;
+                                }
+                            }
+                        }
+
                         if !current_line.is_empty() && msg_y < y + height - 1 {
                             buffer.draw_text(current_x, msg_y, &current_line,
                                 Style::builder().fg(theme.text_muted).bg(theme.bg_panel).build());
                             msg_y += 1;
                         }
-                        current_line = word.to_string();
+                    }
 
-                        if msg_y >= y + height - 1 {
-                            break;
-                        }
+                    // Add separator after thinking
+                    if msg_y < y + height - 1 {
+                        msg_y += 1;
                     }
                 }
-
-                if !current_line.is_empty() && msg_y < y + height - 1 {
-                    buffer.draw_text(current_x, msg_y, &current_line,
-                        Style::builder().fg(theme.text_muted).bg(theme.bg_panel).build());
-                    msg_y += 1;
-                }
-            }
-
-            // Add separator after thinking
-            if msg_y < y + height - 1 {
-                msg_y += 1;
             }
         }
 

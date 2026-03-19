@@ -476,6 +476,7 @@ fn draw_ui(renderer: &mut Renderer, app: &AppState, theme: &Theme) -> io::Result
         content_height,
         &app.messages,
         app.scroll_offset,
+        app.show_thinking,
         theme,
     );
 
