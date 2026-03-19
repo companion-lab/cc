@@ -553,6 +553,8 @@ dependencies = [
  "c2-storage",
  "crossterm",
  "opentui_rust",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

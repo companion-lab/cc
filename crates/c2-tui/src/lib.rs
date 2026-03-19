@@ -1,9 +1,10 @@
 use std::io::{self, stdout};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
@@ -13,7 +14,7 @@ pub mod app;
 pub mod theme;
 pub mod ui;
 
-use app::{App, AppEvent, AppMode};
+use app::{AppState, AppEvent, AppMode, DialogMode, ModelInfo, AgentInfo, McpServerInfo, McpStatus};
 use theme::Theme;
 use ui::{
     sidebar::draw_sidebar,
@@ -21,6 +22,7 @@ use ui::{
     messages::draw_messages,
     input::{draw_input, draw_input_help},
     status_bar::draw_status_bar,
+    dialog::draw_dialog,
 };
 
 const SIDEBAR_WIDTH: u32 = 22;
@@ -40,32 +42,110 @@ pub async fn run() -> anyhow::Result<()> {
     let (width, height) = crossterm::terminal::size()?;
     let mut renderer = Renderer::new(width as u32, height as u32)?;
 
-    let mut app = App::new(cwd.clone());
-
     // Load configuration
     let config = match c2_config::load(&cwd).await {
         Ok(c) => c,
         Err(e) => {
-            app.add_system_message(format!("Warning: Could not load config: {}. Using defaults.", e));
+            eprintln!("Warning: Could not load config: {}. Using defaults.", e);
             c2_config::Config::default()
         }
     };
 
     // Initialize provider
     let registry = match c2_provider::ProviderRegistry::from_config(&config).await {
-        Ok(r) => r,
+        Ok(r) => Some(r),
         Err(e) => {
-            app.add_system_message(format!("Error: {}. Please set your API key in ~/.c2/config.json", e));
-            let _ = run_without_provider(&mut renderer, &mut app).await;
-            cleanup_terminal()?;
-            return Ok(());
+            eprintln!("Warning: {}. Running without provider.", e);
+            None
         }
     };
 
-    let model = registry.model();
+    // Build model info from config
+    let current_model = ModelInfo {
+        provider_id: config.provider.as_ref().map(|p| p.id.clone()).unwrap_or_else(|| "openai-compatible".to_string()),
+        model_id: config.model.clone().unwrap_or_else(|| "unknown".to_string()),
+        name: config.model.clone().unwrap_or_else(|| "Default Model".to_string()),
+        description: "Configured model".to_string(),
+        is_free: false,
+    };
+
+    // Build available models list from provider registry
+    let mut available_models = Vec::new();
+    if let Some(reg) = &registry {
+        let model = reg.model();
+        available_models.push(ModelInfo {
+            provider_id: model.provider_id().to_string(),
+            model_id: model.id().to_string(),
+            name: model.id().to_string(),
+            description: format!("Context: {}k tokens", model.context_length() / 1000),
+            is_free: false,
+        });
+    }
+
+    // Build agents from config
+    let mut available_agents = vec![
+        AgentInfo {
+            name: "build".to_string(),
+            description: "Primary agent - full access to all tools".to_string(),
+            model: None,
+            mode: "primary".to_string(),
+            hidden: false,
+        },
+        AgentInfo {
+            name: "plan".to_string(),
+            description: "Planning mode - read-only, creates implementation plans".to_string(),
+            model: None,
+            mode: "primary".to_string(),
+            hidden: false,
+        },
+    ];
+
+    // Add custom agents from config
+    for agent in &config.agents {
+        let mode_str = match &agent.mode {
+            c2_config::AgentMode::Primary => "primary",
+            c2_config::AgentMode::Subagent => "subagent",
+            c2_config::AgentMode::All => "all",
+        };
+        available_agents.push(AgentInfo {
+            name: agent.name.clone(),
+            description: agent.system_prompt.as_ref()
+                .map(|p| p.chars().take(50).collect())
+                .unwrap_or_else(|| "Custom agent".to_string()),
+            model: agent.model.clone(),
+            mode: mode_str.to_string(),
+            hidden: false,
+        });
+    }
+
+    // Build MCP servers from config
+    let mut mcp_servers = HashMap::new();
+    for (name, server_config) in &config.mcp {
+        let (server_type, status) = match server_config {
+            c2_config::McpServerConfig::Stdio { .. } => ("stdio", McpStatus::Disconnected),
+            c2_config::McpServerConfig::Sse { .. } => ("sse", McpStatus::Disconnected),
+            c2_config::McpServerConfig::Http { .. } => ("http", McpStatus::Disconnected),
+        };
+        mcp_servers.insert(name.clone(), McpServerInfo {
+            name: name.clone(),
+            status,
+            server_type: server_type.to_string(),
+        });
+    }
+
+    let mut app = AppState::new(cwd.clone(), current_model, available_agents, mcp_servers);
+    app.available_models = available_models;
+
+    let model = registry.map(|r| r.model());
 
     let data_dir = c2_config::Paths::user_data_dir();
-    let db = Arc::new(c2_storage::Db::open(&data_dir).await?);
+    let db = match c2_storage::Db::open(&data_dir).await {
+        Ok(db) => Some(Arc::new(db)),
+        Err(e) => {
+            app.add_system_message(format!("Warning: Could not open database: {}", e));
+            None
+        }
+    };
     let bus = Arc::new(c2_core::bus::Bus::new());
     let mut bus_rx = bus.subscribe();
 
@@ -73,8 +153,8 @@ pub async fn run() -> anyhow::Result<()> {
     let result = run_event_loop(
         &mut renderer,
         &mut app,
-        Some(model),
-        Some(db),
+        model,
+        db,
         Some(bus),
         &mut bus_rx,
     ).await;
@@ -98,7 +178,7 @@ fn cleanup_terminal() -> io::Result<()> {
 
 async fn run_without_provider(
     renderer: &mut Renderer,
-    app: &mut App,
+    app: &mut AppState,
 ) -> io::Result<()> {
     let theme = Theme::dark();
 
@@ -119,7 +199,7 @@ async fn run_without_provider(
 
 async fn run_event_loop(
     renderer: &mut Renderer,
-    app: &mut App,
+    app: &mut AppState,
     model: Option<Arc<dyn c2_provider::LanguageModel>>,
     db: Option<Arc<c2_storage::Db>>,
     bus: Option<Arc<c2_core::bus::Bus>>,
@@ -153,7 +233,7 @@ async fn run_event_loop(
                             }
                         }
 
-                        app.status = "Processing...".to_string();
+                        app.status = format!("Processing with {}...", app.current_model.name);
 
                         // Spawn agent processor
                         let model_clone = model.clone();
@@ -191,10 +271,21 @@ async fn run_event_loop(
                 }
                 AppEvent::ResponseDone => {
                     app.mode = AppMode::Input;
-                    app.status = "Ready".to_string();
+                    app.status = format!("Ready | {} | {}", app.current_model.name, app.current_agent.name);
                 }
                 AppEvent::Error(error) => {
                     app.add_error(error);
+                }
+                AppEvent::ModelChanged(model) => {
+                    app.current_model = model;
+                }
+                AppEvent::AgentChanged(agent) => {
+                    app.current_agent = agent;
+                }
+                AppEvent::McpToggled(name, connected) => {
+                    if let Some(server) = app.mcp_servers.get_mut(&name) {
+                        server.status = if connected { McpStatus::Connected } else { McpStatus::Disconnected };
+                    }
                 }
             }
         }
@@ -220,21 +311,35 @@ async fn run_event_loop(
         // Handle keyboard input
         if event::poll(std::time::Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Esc => return Ok(()),
-                    KeyCode::Enter => {
-                        if app.mode == AppMode::Input {
-                            app.send_message();
-                        }
-                    }
-                    _ => app.handle_key_event(key),
+                // Handle dialog close on Esc
+                if key.code == KeyCode::Esc && app.dialog_mode != DialogMode::None {
+                    app.handle_key_event(key);
+                    continue;
                 }
+
+                // Handle exit when no dialog
+                if key.code == KeyCode::Esc && app.dialog_mode == DialogMode::None {
+                    return Ok(());
+                }
+
+                // Handle Ctrl+C exit
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    return Ok(());
+                }
+
+                // Handle Enter for sending message
+                if key.code == KeyCode::Enter && app.mode == AppMode::Input && app.dialog_mode == DialogMode::None {
+                    app.send_message();
+                    continue;
+                }
+
+                app.handle_key_event(key);
             }
         }
     }
 }
 
-fn draw_ui(renderer: &mut Renderer, app: &App, theme: &Theme) -> io::Result<()> {
+fn draw_ui(renderer: &mut Renderer, app: &AppState, theme: &Theme) -> io::Result<()> {
     let buffer = renderer.buffer();
     let width = buffer.width();
     let height = buffer.height();
@@ -261,10 +366,10 @@ fn draw_ui(renderer: &mut Renderer, app: &App, theme: &Theme) -> io::Result<()> 
         theme,
     );
 
-    // Draw header
-    let mode_text = match app.mode {
-        AppMode::Input => "Ready",
-        AppMode::Waiting => "Processing",
+    // Draw header with model and agent info
+    let status_indicator = match app.mode {
+        AppMode::Input => format!("Ready | {} | {}", app.current_model.name, app.current_agent.name),
+        AppMode::Waiting => format!("Processing | {} | {}", app.current_model.name, app.current_agent.name),
     };
     draw_header(
         buffer,
@@ -272,7 +377,7 @@ fn draw_ui(renderer: &mut Renderer, app: &App, theme: &Theme) -> io::Result<()> 
         0,
         main_width,
         &format!("c2 - {}", app.cwd.file_name().unwrap_or_default().to_string_lossy()),
-        mode_text,
+        &status_indicator,
         theme,
     );
 
@@ -323,6 +428,11 @@ fn draw_ui(renderer: &mut Renderer, app: &App, theme: &Theme) -> io::Result<()> 
         app.messages.len(),
         theme,
     );
+
+    // Draw dialog if open
+    if app.dialog_mode != DialogMode::None {
+        draw_dialog(buffer, app, theme);
+    }
 
     Ok(())
 }

@@ -15,3 +15,5 @@ opentui_rust   = "0.2"
 crossterm      = { workspace = true }
 tokio          = { workspace = true }
 anyhow         = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }

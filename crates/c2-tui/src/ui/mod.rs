@@ -4,3 +4,4 @@ pub mod messages;
 pub mod input;
 pub mod status_bar;
 pub mod panel;
+pub mod dialog;
