@@ -1,6 +1,6 @@
 [package]
 name = "c2-tui"
-description = "Terminal UI (ratatui)"
+description = "Terminal UI (opentui_rust)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,8 +11,7 @@ c2-config      = { workspace = true }
 c2-storage     = { workspace = true }
 c2-provider    = { workspace = true }
 c2-agent       = { workspace = true }
-ratatui        = { workspace = true }
+opentui_rust   = "0.2"
 crossterm      = { workspace = true }
 tokio          = { workspace = true }
-textwrap       = "0.16"
 anyhow         = { workspace = true }
