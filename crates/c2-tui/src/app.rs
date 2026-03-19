@@ -12,9 +12,19 @@ pub enum AppMode {
 #[derive(Debug, Clone, PartialEq)]
 pub enum DialogMode {
     None,
+    CommandPalette,
     ModelSelect,
     AgentSelect,
     McpManager,
+    McpMarketplace,
+}
+
+#[derive(Debug, Clone)]
+pub struct Command {
+    pub name: String,
+    pub description: String,
+    pub shortcut: String,
+    pub category: String,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +73,10 @@ pub struct AppState {
     pub rx: UnboundedReceiver<AppEvent>,
     pub cwd: PathBuf,
 
+    // Command palette
+    pub commands: Vec<Command>,
+    pub command_dialog_selection: usize,
+
     // Model selection state
     pub current_model: ModelInfo,
     pub available_models: Vec<ModelInfo>,
@@ -79,6 +93,10 @@ pub struct AppState {
     pub mcp_servers: HashMap<String, McpServerInfo>,
     pub mcp_dialog_selection: usize,
 
+    // MCP Marketplace state
+    pub marketplace_servers: Vec<crate::mcp_marketplace::McpMarketplaceServer>,
+    pub marketplace_dialog_selection: usize,
+
     // Dialog state
     pub dialog_mode: DialogMode,
     pub dialog_filter: String,
@@ -93,6 +111,7 @@ pub enum AppEvent {
     ModelChanged(ModelInfo),
     AgentChanged(AgentInfo),
     McpToggled(String, bool),
+    CommandExecuted(String),
 }
 
 #[derive(Debug, Clone)]
@@ -116,10 +135,22 @@ impl AppState {
         let recent_models = Self::load_recent_models();
         let favorite_models = Self::load_favorite_models();
 
+        // Define available commands
+        let commands = vec![
+            Command { name: "model".to_string(), description: "Switch model".to_string(), shortcut: "Ctrl+M".to_string(), category: "Agent".to_string() },
+            Command { name: "agent".to_string(), description: "Switch agent/mode".to_string(), shortcut: "Tab".to_string(), category: "Agent".to_string() },
+            Command { name: "research".to_string(), description: "Enter research mode".to_string(), shortcut: "".to_string(), category: "Agent".to_string() },
+            Command { name: "mcp".to_string(), description: "Manage installed MCP servers".to_string(), shortcut: "Ctrl+T".to_string(), category: "MCP".to_string() },
+            Command { name: "marketplace".to_string(), description: "Browse MCP marketplace".to_string(), shortcut: "".to_string(), category: "MCP".to_string() },
+            Command { name: "clear".to_string(), description: "Clear conversation".to_string(), shortcut: "".to_string(), category: "Session".to_string() },
+            Command { name: "help".to_string(), description: "Show help".to_string(), shortcut: "".to_string(), category: "System".to_string() },
+            Command { name: "quit".to_string(), description: "Exit c2".to_string(), shortcut: "Ctrl+C".to_string(), category: "System".to_string() },
+        ];
+
         Self {
             messages: vec![Message {
                 role: Role::System,
-                content: "Press Ctrl+Shift+H to list all commands".to_string(),
+                content: "Type / to list commands".to_string(),
             }],
             input: String::new(),
             sessions: vec!["New Chat".to_string()],
@@ -131,6 +162,8 @@ impl AppState {
             tx,
             rx,
             cwd,
+            commands,
+            command_dialog_selection: 0,
             current_model: model,
             available_models: Vec::new(),
             recent_models,
@@ -147,6 +180,8 @@ impl AppState {
             agent_dialog_selection: 0,
             mcp_servers,
             mcp_dialog_selection: 0,
+            marketplace_servers: crate::mcp_marketplace::McpMarketplace::new().servers().to_vec(),
+            marketplace_dialog_selection: 0,
             dialog_mode: DialogMode::None,
             dialog_filter: String::new(),
         }
@@ -174,6 +209,9 @@ impl AppState {
                         } else {
                             self.cycle_agent(1);
                         }
+                    }
+                    KeyCode::Char('/') if self.input.is_empty() => {
+                        self.open_dialog(DialogMode::CommandPalette);
                     }
                     KeyCode::Char(c) => {
                         self.input.push(c);
@@ -216,7 +254,10 @@ impl AppState {
             KeyCode::Enter => {
                 self.select_dialog_item();
             }
-            KeyCode::Char(c) => {
+            KeyCode::Char(' ') if self.dialog_mode == DialogMode::McpMarketplace => {
+                self.toggle_marketplace_item();
+            }
+            KeyCode::Char(c) if c != ' ' || self.dialog_mode != DialogMode::McpMarketplace => {
                 self.dialog_filter.push(c);
                 self.reset_dialog_selection();
             }
@@ -225,6 +266,26 @@ impl AppState {
                 self.reset_dialog_selection();
             }
             _ => {}
+        }
+    }
+
+    fn toggle_marketplace_item(&mut self) {
+        let filtered = self.get_filtered_marketplace_servers();
+        if let Some(server) = filtered.get(self.marketplace_dialog_selection) {
+            let id = server.id.clone();
+            let mut msg = String::new();
+            if let Some(s) = self.marketplace_servers.iter_mut().find(|s| s.id == id) {
+                s.enabled = !s.enabled;
+                if s.enabled {
+                    let cmd_str = s.command.join(" ");
+                    msg = format!("Enabled: {} ({})", s.name, cmd_str);
+                } else {
+                    msg = format!("Disabled: {}", s.name);
+                }
+            }
+            if !msg.is_empty() {
+                self.add_system_message(msg);
+            }
         }
     }
 
@@ -241,9 +302,11 @@ impl AppState {
 
     fn move_dialog_selection(&mut self, delta: i32) {
         let count = match self.dialog_mode {
+            DialogMode::CommandPalette => self.get_filtered_commands().len(),
             DialogMode::ModelSelect => self.get_filtered_models().len(),
             DialogMode::AgentSelect => self.get_filtered_agents().len(),
             DialogMode::McpManager => self.get_filtered_mcp_servers().len(),
+            DialogMode::McpMarketplace => self.get_filtered_marketplace_servers().len(),
             DialogMode::None => 0,
         };
 
@@ -252,9 +315,11 @@ impl AppState {
         }
 
         let current = match self.dialog_mode {
+            DialogMode::CommandPalette => &mut self.command_dialog_selection,
             DialogMode::ModelSelect => &mut self.model_dialog_selection,
             DialogMode::AgentSelect => &mut self.agent_dialog_selection,
             DialogMode::McpManager => &mut self.mcp_dialog_selection,
+            DialogMode::McpMarketplace => &mut self.marketplace_dialog_selection,
             DialogMode::None => return,
         };
 
@@ -264,15 +329,26 @@ impl AppState {
 
     fn reset_dialog_selection(&mut self) {
         match self.dialog_mode {
+            DialogMode::CommandPalette => self.command_dialog_selection = 0,
             DialogMode::ModelSelect => self.model_dialog_selection = 0,
             DialogMode::AgentSelect => self.agent_dialog_selection = 0,
             DialogMode::McpManager => self.mcp_dialog_selection = 0,
+            DialogMode::McpMarketplace => self.marketplace_dialog_selection = 0,
             DialogMode::None => {}
         }
     }
 
     fn select_dialog_item(&mut self) {
         match self.dialog_mode {
+            DialogMode::CommandPalette => {
+                let commands = self.get_filtered_commands();
+                if let Some(cmd) = commands.get(self.command_dialog_selection) {
+                    let name = cmd.name.clone();
+                    self.close_dialog();
+                    self.execute_command(&name);
+                    return;
+                }
+            }
             DialogMode::ModelSelect => {
                 let models = self.get_filtered_models();
                 if let Some(model) = models.get(self.model_dialog_selection) {
@@ -294,9 +370,71 @@ impl AppState {
                     self.toggle_mcp(&name);
                 }
             }
+            DialogMode::McpMarketplace => {
+                // Toggle the selected marketplace item on Enter
+                self.toggle_marketplace_item();
+            }
             DialogMode::None => {}
         }
         self.close_dialog();
+    }
+
+    pub fn execute_command(&mut self, name: &str) {
+        match name {
+            "model" => self.open_dialog(DialogMode::ModelSelect),
+            "agent" => self.open_dialog(DialogMode::AgentSelect),
+            "research" => {
+                if let Some(agent) = self.available_agents.iter().find(|a| a.name == "research").cloned() {
+                    self.set_agent(agent);
+                } else {
+                    self.add_system_message("Research mode not configured. Run with a research agent.".to_string());
+                }
+            }
+            "mcp" => self.open_dialog(DialogMode::McpManager),
+            "marketplace" => self.open_dialog(DialogMode::McpMarketplace),
+            "clear" => {
+                self.messages.clear();
+                self.add_system_message("Conversation cleared.".to_string());
+            }
+            "help" => {
+                self.add_system_message(
+                    "Available commands:\n\
+                    /model - Switch model (Ctrl+M)\n\
+                    /agent - Switch agent/mode (Tab)\n\
+                    /research - Enter research mode\n\
+                    /mcp - Manage installed MCP servers (Ctrl+T)\n\
+                    /marketplace - Browse MCP marketplace\n\
+                    /clear - Clear conversation\n\
+                    /help - Show this help\n\
+                    /quit - Exit c2 (Ctrl+C)\n\n\
+                    Shortcuts:\n\
+                    Enter - Send message\n\
+                    Tab/Shift+Tab - Cycle agents\n\
+                    Space - Toggle MCP in marketplace\n\
+                    Esc - Close dialog".to_string()
+                );
+            }
+            "quit" => {
+                let _ = self.tx.send(AppEvent::CommandExecuted("quit".to_string()));
+            }
+            _ => {
+                self.add_system_message(format!("Unknown command: {}", name));
+            }
+        }
+    }
+
+    pub fn get_filtered_commands(&self) -> Vec<Command> {
+        let filter = self.dialog_filter.to_lowercase();
+        let mut commands = self.commands.clone();
+
+        if !filter.is_empty() {
+            commands.retain(|c| {
+                c.name.to_lowercase().contains(&filter) ||
+                c.description.to_lowercase().contains(&filter)
+            });
+        }
+
+        commands
     }
 
     pub fn set_model(&mut self, model: ModelInfo) {
@@ -406,6 +544,23 @@ impl AppState {
             servers.retain(|s| s.to_lowercase().contains(&filter));
         }
 
+        servers
+    }
+
+    pub fn get_filtered_marketplace_servers(&self) -> Vec<crate::mcp_marketplace::McpMarketplaceServer> {
+        let filter = self.dialog_filter.to_lowercase();
+        let mut servers = self.marketplace_servers.clone();
+
+        if !filter.is_empty() {
+            servers.retain(|s| {
+                s.name.to_lowercase().contains(&filter)
+                    || s.description.to_lowercase().contains(&filter)
+                    || s.category.to_lowercase().contains(&filter)
+            });
+        }
+
+        // Sort by installs (descending)
+        servers.sort_by(|a, b| b.installs.cmp(&a.installs));
         servers
     }
 
@@ -541,6 +696,11 @@ impl AppState {
             AppEvent::McpToggled(name, connected) => {
                 if let Some(server) = self.mcp_servers.get_mut(&name) {
                     server.status = if connected { McpStatus::Connected } else { McpStatus::Disconnected };
+                }
+            }
+            AppEvent::CommandExecuted(cmd) => {
+                if cmd == "quit" {
+                    // Handle quit in the event loop
                 }
             }
             _ => {}

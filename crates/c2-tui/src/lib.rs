@@ -14,6 +14,7 @@ pub mod app;
 pub mod theme;
 pub mod ui;
 pub mod models_fetcher;
+pub mod mcp_marketplace;
 
 use app::{AppState, AppEvent, AppMode, DialogMode, ModelInfo, AgentInfo, McpServerInfo, McpStatus};
 use theme::Theme;
@@ -230,8 +231,15 @@ async fn run_without_provider(
         if event::poll(std::time::Duration::from_millis(50))? {
             match event::read()? {
                 Event::Resize(new_width, new_height) => {
+                    // Clear terminal completely before recreating renderer
+                    use std::io::Write;
+                    print!("\x1b[2J\x1b[H"); // Clear screen and move cursor to home
+                    std::io::stdout().flush().ok();
+                    
                     *renderer = Renderer::new(new_width as u32, new_height as u32)?;
-                    renderer.buffer().clear(theme.bg_dark);
+                    for _ in 0..3 {
+                        renderer.buffer().clear(theme.bg_dark);
+                    }
                     renderer.present()?;
                     continue;
                 }
@@ -337,6 +345,12 @@ async fn run_event_loop(
                         server.status = if connected { McpStatus::Connected } else { McpStatus::Disconnected };
                     }
                 }
+                AppEvent::CommandExecuted(cmd) => {
+                    if cmd == "quit" {
+                        cleanup_terminal()?;
+                        return Ok(());
+                    }
+                }
             }
         }
 
@@ -362,10 +376,18 @@ async fn run_event_loop(
         if event::poll(std::time::Duration::from_millis(50))? {
             match event::read()? {
                 Event::Resize(new_width, new_height) => {
+                    // Clear terminal completely before recreating renderer
+                    use std::io::Write;
+                    print!("\x1b[2J\x1b[H"); // Clear screen and move cursor to home
+                    std::io::stdout().flush().ok();
+                    
                     // Recreate renderer with new dimensions
                     *renderer = Renderer::new(new_width as u32, new_height as u32)?;
-                    // Clear and present immediately to avoid leftover characters
-                    renderer.buffer().clear(theme.bg_dark);
+                    
+                    // Force clear the new buffer multiple times to ensure no artifacts
+                    for _ in 0..3 {
+                        renderer.buffer().clear(theme.bg_dark);
+                    }
                     renderer.present()?;
                     continue;
                 }

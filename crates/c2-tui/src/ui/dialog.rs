@@ -29,9 +29,11 @@ pub fn draw_dialog(buffer: &mut OptimizedBuffer, app: &AppState, theme: &Theme) 
 
     // Draw dialog title
     let title = match app.dialog_mode {
+        DialogMode::CommandPalette => " Commands ",
         DialogMode::ModelSelect => " Select Model ",
         DialogMode::AgentSelect => " Select Agent ",
         DialogMode::McpManager => " MCP Servers ",
+        DialogMode::McpMarketplace => " MCP Marketplace ",
         DialogMode::None => "",
     };
 
@@ -71,6 +73,9 @@ pub fn draw_dialog(buffer: &mut OptimizedBuffer, app: &AppState, theme: &Theme) 
     let max_items = (dialog_height.saturating_sub(6)) as usize;
 
     match app.dialog_mode {
+        DialogMode::CommandPalette => {
+            draw_command_list(buffer, app, dialog_x, items_y, dialog_width, max_items, theme);
+        }
         DialogMode::ModelSelect => {
             draw_model_list(buffer, app, dialog_x, items_y, dialog_width, max_items, theme);
         }
@@ -79,6 +84,9 @@ pub fn draw_dialog(buffer: &mut OptimizedBuffer, app: &AppState, theme: &Theme) 
         }
         DialogMode::McpManager => {
             draw_mcp_list(buffer, app, dialog_x, items_y, dialog_width, max_items, theme);
+        }
+        DialogMode::McpMarketplace => {
+            draw_marketplace_list(buffer, app, dialog_x, items_y, dialog_width, max_items, theme);
         }
         DialogMode::None => {}
     }
@@ -290,5 +298,182 @@ fn draw_mcp_list(
             buffer.draw_text(x + 2, hint_y, "Space: Toggle │ Enter: Toggle",
                 Style::builder().fg(theme.text_muted).bg(theme.bg_panel).build());
         }
+    }
+}
+
+fn draw_command_list(
+    buffer: &mut OptimizedBuffer,
+    app: &AppState,
+    x: u32,
+    y: u32,
+    width: u32,
+    max_items: usize,
+    theme: &Theme,
+) {
+    let commands = app.get_filtered_commands();
+
+    if commands.is_empty() {
+        buffer.draw_text(x + 2, y, "No commands match your filter",
+            Style::builder().fg(theme.text_muted).bg(theme.bg_panel).build());
+        return;
+    }
+
+    // Group by category
+    let mut current_category = String::new();
+    let mut row = 0u32;
+
+    for (idx, cmd) in commands.iter().enumerate().take(max_items) {
+        let is_selected = idx == app.command_dialog_selection;
+
+        // Draw category header if changed
+        if cmd.category != current_category {
+            if row > 0 {
+                row += 1; // Add spacing between categories
+            }
+            if row < max_items as u32 {
+                let item_y = y + row;
+                let bg = theme.bg_panel;
+                // Clear row
+                for col in x + 1..x + width - 1 {
+                    buffer.set(col, item_y, Cell::new(' ', Style::builder().bg(bg).build()));
+                }
+                buffer.draw_text(x + 2, item_y, &cmd.category,
+                    Style::builder().fg(theme.accent_primary).bg(bg).bold().build());
+                row += 1;
+            }
+            current_category = cmd.category.clone();
+        }
+
+        if row >= max_items as u32 {
+            break;
+        }
+
+        let item_y = y + row;
+        let bg = if is_selected { theme.bg_highlight } else { theme.bg_panel };
+        let fg = if is_selected { theme.text_primary } else { theme.text_secondary };
+
+        // Clear row
+        for col in x + 1..x + width - 1 {
+            buffer.set(col, item_y, Cell::new(' ', Style::builder().bg(bg).build()));
+        }
+
+        // Draw prefix
+        let prefix = if is_selected { "▸ " } else { "  " };
+        buffer.draw_text(x + 2, item_y, prefix,
+            Style::builder().fg(fg).bg(bg).build());
+
+        // Draw command name with / prefix
+        let name = format!("/{}", cmd.name);
+        buffer.draw_text(x + 4, item_y, &name,
+            Style::builder().fg(fg).bg(bg).build());
+
+        // Draw description
+        let desc_x = x + 4 + name.len() as u32 + 2;
+        if desc_x < x + width - 15 {
+            buffer.draw_text(desc_x, item_y, &cmd.description,
+                Style::builder().fg(theme.text_muted).bg(bg).build());
+        }
+
+        // Draw shortcut on right
+        if !cmd.shortcut.is_empty() {
+            let shortcut_text = format!("{} ", cmd.shortcut);
+            let shortcut_x = x + width - shortcut_text.len() as u32 - 2;
+            if shortcut_x > desc_x + cmd.description.len() as u32 + 2 {
+                buffer.draw_text(shortcut_x, item_y, &shortcut_text,
+                    Style::builder().fg(theme.text_muted).bg(bg).build());
+            }
+        }
+
+        row += 1;
+    }
+}
+
+fn draw_marketplace_list(
+    buffer: &mut OptimizedBuffer,
+    app: &AppState,
+    x: u32,
+    y: u32,
+    width: u32,
+    max_items: usize,
+    theme: &Theme,
+) {
+    let servers = app.get_filtered_marketplace_servers();
+
+    if servers.is_empty() {
+        buffer.draw_text(x + 2, y, "No MCP servers match your filter",
+            Style::builder().fg(theme.text_muted).bg(theme.bg_panel).build());
+        return;
+    }
+
+    for (idx, server) in servers.iter().enumerate().take(max_items) {
+        let item_y = y + idx as u32;
+        let is_selected = idx == app.marketplace_dialog_selection;
+
+        let bg = if is_selected { theme.bg_highlight } else { theme.bg_panel };
+        let fg = if is_selected { theme.text_primary } else { theme.text_secondary };
+
+        // Clear row
+        for col in x + 1..x + width - 1 {
+            buffer.set(col, item_y, Cell::new(' ', Style::builder().bg(bg).build()));
+        }
+
+        // Draw selection prefix
+        let prefix = if is_selected { "▸ " } else { "  " };
+        buffer.draw_text(x + 2, item_y, prefix,
+            Style::builder().fg(fg).bg(bg).build());
+
+        // Draw enabled/disabled status
+        let status = if server.enabled { "●" } else { "○" };
+        let status_color = if server.enabled { theme.accent_secondary } else { theme.text_muted };
+        buffer.draw_text(x + 4, item_y, status,
+            Style::builder().fg(status_color).bg(bg).build());
+
+        // Draw server name
+        buffer.draw_text(x + 6, item_y, &server.name,
+            Style::builder().fg(fg).bg(bg).build());
+
+        // Draw category
+        let cat_text = format!(" [{}]", server.category);
+        let cat_x = x + 6 + server.name.len() as u32 + 1;
+        if (cat_x + cat_text.len() as u32) < (x + width - 10) {
+            buffer.draw_text(cat_x, item_y, &cat_text,
+                Style::builder().fg(theme.text_muted).bg(bg).build());
+        }
+
+        // Draw installs on right
+        let installs_text = if server.installs >= 1000 {
+            format!("{}k ", server.installs / 1000)
+        } else {
+            format!("{} ", server.installs)
+        };
+        let installs_x = x + width - installs_text.len() as u32 - 2;
+        if installs_x > cat_x + cat_text.len() as u32 + 2 {
+            buffer.draw_text(installs_x, item_y, &installs_text,
+                Style::builder().fg(theme.text_muted).bg(bg).build());
+        }
+
+        // Draw description on second row if selected
+        if is_selected && item_y + 1 < y + max_items as u32 {
+            let desc_y = item_y + 1;
+            // Clear row
+            for col in x + 1..x + width - 1 {
+                buffer.set(col, desc_y, Cell::new(' ', Style::builder().bg(theme.bg_panel).build()));
+            }
+            let max_desc = (width - 8) as usize;
+            let desc = if server.description.len() > max_desc {
+                format!("{}…", &server.description[..max_desc - 1])
+            } else {
+                server.description.clone()
+            };
+            buffer.draw_text(x + 6, desc_y, &desc,
+                Style::builder().fg(theme.text_muted).bg(theme.bg_panel).build());
+        }
+    }
+
+    // Draw help text at bottom
+    let help_y = y + std::cmp::min(servers.len(), max_items) as u32 + 1;
+    if help_y < y + max_items as u32 + 2 {
+        buffer.draw_text(x + 2, help_y, "Space: Toggle │ Enter: Select │ Esc: Close",
+            Style::builder().fg(theme.text_muted).bg(theme.bg_panel).build());
     }
 }

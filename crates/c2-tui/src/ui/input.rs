@@ -21,27 +21,30 @@ pub fn draw_input(
     draw_panel(buffer, x, y, width, height, theme);
 
     // Draw input prompt
-    let prompt = if is_waiting { "◌ " } else { "● " };
+    let prompt = if is_waiting { "◌ " } else { "❯ " };
     let prompt_color = if is_waiting { theme.accent_warning } else { theme.accent_primary };
+    let prompt_width = 2u32;
 
     buffer.draw_text(x + 1, y + 1, prompt,
         Style::builder().fg(prompt_color).bg(theme.bg_panel).build());
 
-    // Draw input text
-    let max_text_len = width.saturating_sub(4) as usize;
+    // Draw input text with proper truncation
+    let max_text_len = width.saturating_sub(prompt_width + 3) as usize;
     let display_text = if input_text.len() > max_text_len {
-        format!("{}…", &input_text[input_text.len() - max_text_len + 1..])
+        format!("…{}", &input_text[input_text.len() - max_text_len + 1..])
     } else {
         input_text.to_string()
     };
 
-    buffer.draw_text(x + 3, y + 1, &display_text,
+    let text_x = x + 1 + prompt_width;
+    buffer.draw_text(text_x, y + 1, &display_text,
         Style::builder().fg(theme.text_primary).bg(theme.bg_panel).build());
 
-    // Draw cursor
+    // Draw cursor (blinking block) - positioned right after the text
     if !is_waiting {
-        let cursor_x = x + 3 + display_text.len() as u32;
+        let cursor_x = text_x + display_text.len() as u32;
         if cursor_x < x + width - 1 {
+            // Use a block character for the cursor
             buffer.set(cursor_x, y + 1, Cell::new('█',
                 Style::builder().fg(theme.accent_primary).bg(theme.bg_panel).build()));
         }
