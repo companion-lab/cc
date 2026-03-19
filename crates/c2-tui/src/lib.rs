@@ -13,6 +13,7 @@ use opentui_rust::renderer::Renderer;
 pub mod app;
 pub mod theme;
 pub mod ui;
+pub mod models_fetcher;
 
 use app::{AppState, AppEvent, AppMode, DialogMode, ModelInfo, AgentInfo, McpServerInfo, McpStatus};
 use theme::Theme;
@@ -190,6 +191,9 @@ async fn run_without_provider(
             match event::read()? {
                 Event::Resize(new_width, new_height) => {
                     *renderer = Renderer::new(new_width as u32, new_height as u32)?;
+                    renderer.buffer().clear(theme.bg_dark);
+                    renderer.present()?;
+                    continue;
                 }
                 Event::Key(key) => {
                     match key.code {
@@ -320,6 +324,10 @@ async fn run_event_loop(
                 Event::Resize(new_width, new_height) => {
                     // Recreate renderer with new dimensions
                     *renderer = Renderer::new(new_width as u32, new_height as u32)?;
+                    // Clear and present immediately to avoid leftover characters
+                    renderer.buffer().clear(theme.bg_dark);
+                    renderer.present()?;
+                    continue;
                 }
                 Event::Key(key) => {
                     // Handle dialog close on Esc
