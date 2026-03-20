@@ -15,6 +15,7 @@ pub mod theme;
 pub mod ui;
 pub mod models_fetcher;
 pub mod mcp_marketplace;
+pub mod mcp_manager;
 
 use app::{AppState, AppEvent, AppMode, DialogMode, ModelInfo, AgentInfo, McpServerInfo, McpStatus};
 use theme::Theme;

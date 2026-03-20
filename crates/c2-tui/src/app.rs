@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
+use crate::mcp_manager::McpManager;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppMode {
     Input,
@@ -93,6 +95,7 @@ pub struct AppState {
     // MCP state
     pub mcp_servers: HashMap<String, McpServerInfo>,
     pub mcp_dialog_selection: usize,
+    pub mcp_manager: McpManager,
 
     // MCP Marketplace state
     pub marketplace_servers: Vec<crate::mcp_marketplace::McpMarketplaceServer>,
@@ -185,7 +188,16 @@ impl AppState {
             agent_dialog_selection: 0,
             mcp_servers,
             mcp_dialog_selection: 0,
-            marketplace_servers: crate::mcp_marketplace::McpMarketplace::new().servers().to_vec(),
+            mcp_manager: McpManager::new(),
+            marketplace_servers: {
+                let mut servers = crate::mcp_marketplace::McpMarketplace::new().servers().to_vec();
+                // Sync with persisted state
+                let manager = McpManager::new();
+                for server in servers.iter_mut() {
+                    server.enabled = manager.is_enabled(&server.id);
+                }
+                servers
+            },
             marketplace_dialog_selection: 0,
             dialog_mode: DialogMode::None,
             dialog_filter: String::new(),
@@ -262,9 +274,11 @@ impl AppState {
             KeyCode::Char(' ') if self.dialog_mode == DialogMode::McpMarketplace => {
                 self.toggle_marketplace_item();
             }
-            KeyCode::Char(c) if c != ' ' || self.dialog_mode != DialogMode::McpMarketplace => {
-                self.dialog_filter.push(c);
-                self.reset_dialog_selection();
+            KeyCode::Char(c) => {
+                if !(c == ' ' && self.dialog_mode == DialogMode::McpMarketplace) {
+                    self.dialog_filter.push(c);
+                    self.reset_dialog_selection();
+                }
             }
             KeyCode::Backspace => {
                 self.dialog_filter.pop();
@@ -278,18 +292,24 @@ impl AppState {
         let filtered = self.get_filtered_marketplace_servers();
         if let Some(server) = filtered.get(self.marketplace_dialog_selection) {
             let id = server.id.clone();
-            let mut msg = String::new();
+            let name = server.name.clone();
+            let command = server.command.clone();
+            let env = server.env.clone();
+
+            // Toggle in mcp_manager for persistence
+            let enabled = self.mcp_manager.toggle(&id, &name, command.clone(), env.clone());
+
+            // Update the marketplace server state
             if let Some(s) = self.marketplace_servers.iter_mut().find(|s| s.id == id) {
-                s.enabled = !s.enabled;
-                if s.enabled {
-                    let cmd_str = s.command.join(" ");
-                    msg = format!("Enabled: {} ({})", s.name, cmd_str);
-                } else {
-                    msg = format!("Disabled: {}", s.name);
-                }
+                s.enabled = enabled;
             }
-            if !msg.is_empty() {
-                self.add_system_message(msg);
+
+            // Show feedback
+            if enabled {
+                let cmd_str = command.join(" ");
+                self.add_system_message(format!("Installed: {} ({})", name, cmd_str));
+            } else {
+                self.add_system_message(format!("Removed: {}", name));
             }
         }
     }
